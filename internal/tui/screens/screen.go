@@ -9,3 +9,8 @@ type Screen interface {
 	View() string
 	SetSize(width, height int)
 }
+
+// Cleanable is implemented by screens that need cleanup before app exit.
+type Cleanable interface {
+	Cleanup()
+}

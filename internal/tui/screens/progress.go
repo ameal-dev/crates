@@ -11,16 +11,16 @@ import (
 	"github.com/ameal-dev/crates/internal/db/queries"
 )
 
-// Tokyo Night palette for progress screen chrome.
+// Progress screen aliases for shared palette
 var (
-	pgSurface   = lipgloss.Color("#1e2030")
-	pgAccent    = lipgloss.Color("#bb9af7")
-	pgOrange    = lipgloss.Color("#e0af68")
-	pgGreen     = lipgloss.Color("#9ece6a")
-	pgBlue      = lipgloss.Color("#7aa2f7")
-	pgMuted     = lipgloss.Color("#565f89")
-	pgFg        = lipgloss.Color("#c0caf5")
-	pgDimBorder = lipgloss.Color("#3b3d57")
+	pgSurface   = clrSurface
+	pgAccent    = clrAccent
+	pgOrange    = clrOrange
+	pgGreen     = clrGreen
+	pgBlue      = clrBlue
+	pgMuted     = clrMuted
+	pgFg        = clrFg
+	pgDimBorder = clrDimBorder
 )
 
 // ProgressScreen shows per-topic mastery and learning stats.

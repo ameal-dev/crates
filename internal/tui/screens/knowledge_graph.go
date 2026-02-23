@@ -32,16 +32,16 @@ var (
 	colorDimGray = lipgloss.Color("#374151")
 )
 
-// Tokyo Night palette for knowledge graph chrome.
+// Knowledge graph aliases for shared palette
 var (
-	kgSurface   = lipgloss.Color("#1e2030")
-	kgAccent    = lipgloss.Color("#bb9af7")
-	kgOrange    = lipgloss.Color("#e0af68")
-	kgGreen     = lipgloss.Color("#9ece6a")
-	kgBlue      = lipgloss.Color("#7aa2f7")
-	kgMuted     = lipgloss.Color("#565f89")
-	kgFg        = lipgloss.Color("#c0caf5")
-	kgDimBorder = lipgloss.Color("#3b3d57")
+	kgSurface   = clrSurface
+	kgAccent    = clrAccent
+	kgOrange    = clrOrange
+	kgGreen     = clrGreen
+	kgBlue      = clrBlue
+	kgMuted     = clrMuted
+	kgFg        = clrFg
+	kgDimBorder = clrDimBorder
 )
 
 // graphTopicNode holds the view model data for a single leaf topic cell.
@@ -332,7 +332,7 @@ func (g *KnowledgeGraphScreen) renderHeatmap() string {
 
 func (g *KnowledgeGraphScreen) renderLegend() string {
 	labelStyle := lipgloss.NewStyle().Foreground(kgMuted)
-	pillDark := lipgloss.Color("#1a1b26")
+	pillDark := clrDark
 
 	pill := func(text string, bg lipgloss.Color) string {
 		return lipgloss.NewStyle().
@@ -358,7 +358,7 @@ func (g *KnowledgeGraphScreen) renderSidebar() string {
 
 	node := g.flatCells[g.selectedIdx]
 	width := 28
-	pillDark := lipgloss.Color("#1a1b26")
+	pillDark := clrDark
 
 	borderStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

@@ -107,7 +107,7 @@ func TestJourney_SessionStreaming(t *testing.T) {
 		},
 	}
 
-	app := tui.NewApp(database, mock)
+	app := tui.NewApp(database, mock, "")
 	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(100, 30))
 
 	// Step 1: App starts on home screen
@@ -172,7 +172,7 @@ func TestJourney_NoEscapeSequencesInOutput(t *testing.T) {
 		},
 	}
 
-	app := tui.NewApp(database, mock)
+	app := tui.NewApp(database, mock, "")
 	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(100, 30))
 
 	// Navigate to session
@@ -227,7 +227,7 @@ func TestJourney_StreamingDoesNotHang(t *testing.T) {
 		responses: []string{longResponse},
 	}
 
-	app := tui.NewApp(database, mock)
+	app := tui.NewApp(database, mock, "")
 	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(100, 30))
 
 	// Navigate to session
@@ -258,7 +258,7 @@ func TestJourney_CtrlH_NavigatesHome(t *testing.T) {
 		responses: []string{"Let's learn! What do you know?"},
 	}
 
-	app := tui.NewApp(database, mock)
+	app := tui.NewApp(database, mock, "")
 	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(100, 30))
 
 	// Navigate to session and wait for it to render
