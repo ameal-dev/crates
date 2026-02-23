@@ -14,6 +14,7 @@ import (
 	"github.com/ameal-dev/crates/internal/ai"
 	"github.com/ameal-dev/crates/internal/curriculum"
 	"github.com/ameal-dev/crates/internal/db"
+	cratesexport "github.com/ameal-dev/crates/internal/export"
 	cratesmcp "github.com/ameal-dev/crates/internal/mcp"
 	"github.com/ameal-dev/crates/internal/tui"
 	"github.com/ameal-dev/crates/migrations"
@@ -23,8 +24,12 @@ var version = "dev"
 
 func main() {
 	for _, arg := range os.Args[1:] {
-		if arg == "--version" || arg == "-v" {
+		switch arg {
+		case "--version", "-v":
 			fmt.Println("crates " + version)
+			return
+		case "--help", "-h":
+			printUsage()
 			return
 		}
 	}
@@ -35,13 +40,41 @@ func main() {
 	}
 }
 
+func printUsage() {
+	fmt.Print(`crates - Socratic coding tutor
+
+Usage:
+  crates           Start the TUI
+  crates --mcp     Start MCP server (for Claude Code integration)
+  crates --version Print version
+  crates export    Export all data as JSON to stdout
+
+Environment:
+  ANTHROPIC_API_KEY  Required. Your Anthropic API key.
+
+MCP Integration:
+  Add to your Claude Code config (~/.claude.json):
+  {
+    "mcpServers": {
+      "crates": {
+        "command": "crates",
+        "args": ["--mcp"]
+      }
+    }
+  }
+`)
+}
+
 func run() error {
-	// Check for --mcp flag
+	// Check for subcommand/flags
 	mcpMode := false
+	exportMode := false
 	for _, arg := range os.Args[1:] {
-		if arg == "--mcp" {
+		switch arg {
+		case "--mcp":
 			mcpMode = true
-			break
+		case "export":
+			exportMode = true
 		}
 	}
 
@@ -79,6 +112,10 @@ func run() error {
 		return runMCP(database, apiKey)
 	}
 
+	if exportMode {
+		return cratesexport.Export(database, os.Stdout)
+	}
+
 	return runTUI(database, apiKey)
 }
 
@@ -92,13 +129,20 @@ func runMCP(database *sql.DB, apiKey string) error {
 	return server.Run(context.Background())
 }
 
-func runTUI(database *sql.DB, apiKey string) error {
+func runTUI(database *sql.DB, apiKey string) (err error) {
+	// Recover from panics to restore terminal state
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic: %v", r)
+		}
+	}()
+
 	var aiClient ai.Streamer
 	if apiKey != "" {
 		aiClient = ai.NewClient(apiKey)
 	}
 
-	app := tui.NewApp(database, aiClient)
+	app := tui.NewApp(database, aiClient, apiKey)
 	p := tea.NewProgram(app, tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		return fmt.Errorf("run tui: %w", err)

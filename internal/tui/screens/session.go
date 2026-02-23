@@ -24,23 +24,26 @@ type SessionScreen struct {
 	db       *sql.DB
 	aiClient ai.Streamer
 	topicID  string
+	apiKey   string
 
 	// If set, resume this session instead of creating a new one
 	resumeSessionID string
 
 	// State
-	session    models.Session
-	topic      models.Topic
-	progress   models.TopicProgress
-	exposures  []models.ConceptExposure
-	chatView   components.ChatView
-	input      textinput.Model
-	spinner    spinner.Model
-	streaming  bool
-	connecting bool // true until first StreamChunkMsg arrives
-	streamBuf  string
-	chunkChan  chan tea.Msg
-	err        error
+	session         models.Session
+	topic           models.Topic
+	progress        models.TopicProgress
+	exposures       []models.ConceptExposure
+	chatView        components.ChatView
+	input           textinput.Model
+	spinner         spinner.Model
+	streaming       bool
+	connecting      bool // true until first StreamChunkMsg arrives
+	streamBuf       string
+	chunkChan       chan tea.Msg
+	completed       bool // session has ended (completed or abandoned)
+	generatingCards bool // recall cards being generated
+	err             error
 
 	// Active model name (set from StreamConnectingMsg)
 	activeModel string
@@ -54,17 +57,17 @@ type SessionScreen struct {
 	width, height int
 }
 
-// Tokyo Night session palette
+// Session screen aliases for shared palette
 var (
-	ssGreen     = lipgloss.Color("#9ece6a")
-	ssMuted     = lipgloss.Color("#565f89")
-	ssDimBorder = lipgloss.Color("#3b3d57")
-	ssFg        = lipgloss.Color("#c0caf5")
-	ssAccent    = lipgloss.Color("#bb9af7")
-	ssOrange    = lipgloss.Color("#e0af68")
-	ssBlue      = lipgloss.Color("#7aa2f7")
-	ssPink      = lipgloss.Color("#f7768e")
-	ssSurface   = lipgloss.Color("#292e42")
+	ssGreen     = clrGreen
+	ssMuted     = clrMuted
+	ssDimBorder = clrDimBorder
+	ssFg        = clrFg
+	ssAccent    = clrAccent
+	ssOrange    = clrOrange
+	ssBlue      = clrBlue
+	ssPink      = clrPink
+	ssSurface   = clrSurfaceHL
 )
 
 var (
@@ -85,7 +88,7 @@ var (
 )
 
 // NewSessionScreen creates a new session screen for the given topic.
-func NewSessionScreen(db *sql.DB, aiClient ai.Streamer, topicID string) *SessionScreen {
+func NewSessionScreen(db *sql.DB, aiClient ai.Streamer, topicID, apiKey string) *SessionScreen {
 	ti := textinput.New()
 	ti.Placeholder = "Type your answer..."
 	ti.Focus()
@@ -100,6 +103,7 @@ func NewSessionScreen(db *sql.DB, aiClient ai.Streamer, topicID string) *Session
 		db:       db,
 		aiClient: aiClient,
 		topicID:  topicID,
+		apiKey:   apiKey,
 		input:    ti,
 		spinner:  sp,
 		chatView: components.NewChatView(80, 20),
@@ -129,13 +133,22 @@ func (s *SessionScreen) Update(msg tea.Msg) (Screen, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			s.Cleanup()
 			return s, tea.Quit
 		case "ctrl+h":
-			return s, func() tea.Msg {
-				return NavigateMsg{Screen: "home"}
+			if s.completed {
+				return s, func() tea.Msg {
+					return NavigateMsg{Screen: "home"}
+				}
 			}
+			return s, s.abandonAndGoHome()
+		case "ctrl+d":
+			if s.streaming || s.completed || s.session.ID == "" {
+				return s, nil
+			}
+			return s, s.completeSession()
 		case "ctrl+s":
-			if s.streaming {
+			if s.streaming || s.completed {
 				return s, nil
 			}
 			// Skip: record skip and ask AI to explain
@@ -148,7 +161,12 @@ func (s *SessionScreen) Update(msg tea.Msg) (Screen, tea.Cmd) {
 			s.chatView.AddMessage("system", "Skipped — asking for explanation...")
 			return s, s.startStreaming()
 		case "enter":
-			if s.streaming {
+			if s.completed && !s.generatingCards {
+				return s, func() tea.Msg {
+					return NavigateMsg{Screen: "home"}
+				}
+			}
+			if s.streaming || s.completed {
 				return s, nil
 			}
 			input := strings.TrimSpace(s.input.Value())
@@ -170,7 +188,14 @@ func (s *SessionScreen) Update(msg tea.Msg) (Screen, tea.Cmd) {
 			s.messagesSent++
 
 			return s, s.startStreaming()
+		case "pgup", "pgdown":
+			s.chatView.Update(msg)
+			return s, nil
 		}
+
+	case tea.MouseMsg:
+		s.chatView.Update(msg)
+		return s, nil
 
 	case sessionInitMsg:
 		if msg.err != nil {
@@ -251,7 +276,22 @@ func (s *SessionScreen) Update(msg tea.Msg) (Screen, tea.Cmd) {
 				s.progress = confidence.UpdateAfterSession(s.progress)
 				_ = queries.UpsertTopicProgress(s.db, s.progress)
 			}
+
+			// Auto-complete when mastery reaches max
+			if s.progress.MasteryLevel >= 5 && !s.completed {
+				return s, s.completeSession()
+			}
 		}
+		return s, nil
+
+	case sessionEndMsg:
+		s.generatingCards = false
+		if msg.err != nil {
+			s.chatView.AddMessage("system", fmt.Sprintf("Could not generate recall cards: %v", msg.err))
+		} else if msg.cardsGenerated > 0 {
+			s.chatView.AddMessage("system", fmt.Sprintf("Generated %d recall cards for review.", msg.cardsGenerated))
+		}
+		s.chatView.AddMessage("system", "Press enter or ctrl+h to return home.")
 		return s, nil
 
 	case ai.StreamFallbackMsg:
@@ -269,7 +309,7 @@ func (s *SessionScreen) Update(msg tea.Msg) (Screen, tea.Cmd) {
 		return s, nil
 
 	case spinner.TickMsg:
-		if s.connecting {
+		if s.connecting || s.generatingCards {
 			var cmd tea.Cmd
 			s.spinner, cmd = s.spinner.Update(msg)
 			return s, cmd
@@ -311,14 +351,18 @@ func (s *SessionScreen) View() string {
 
 	// Help bar
 	var helpLeft string
-	if s.streaming && s.connecting {
+	if s.completed && s.generatingCards {
+		helpLeft = s.spinner.View() + " Generating recall cards..."
+	} else if s.completed {
+		helpLeft = "enter home • ctrl+h home"
+	} else if s.streaming && s.connecting {
 		helpLeft = s.spinner.View() + " Connecting to Anthropic..."
 	} else if s.streaming {
 		helpLeft = "Streaming..."
 	} else if s.messagesSent < 2 {
 		helpLeft = "Tip: type your answer and press enter — it's okay to be wrong, that's how you learn."
 	} else {
-		helpLeft = "enter send • ctrl+s skip • ctrl+h home • ctrl+c quit"
+		helpLeft = "enter send • ctrl+s skip • ctrl+d done • ctrl+h home"
 	}
 
 	// Model indicator (right-aligned)
@@ -398,7 +442,7 @@ func masteryBadge(level int) string {
 	}
 	return lipgloss.NewStyle().
 		Background(bg).
-		Foreground(lipgloss.Color("#1a1b26")).
+		Foreground(clrDark).
 		Padding(0, 1).
 		Render(label)
 }
@@ -452,6 +496,101 @@ func (s *SessionScreen) startStreaming() tea.Cmd {
 		},
 		ai.WaitForChunk(s.chunkChan),
 	)
+}
+
+// sessionEndMsg reports the result of recall card generation.
+type sessionEndMsg struct {
+	cardsGenerated int
+	err            error
+}
+
+// Cleanup marks the session as abandoned if still active. Called on app exit.
+func (s *SessionScreen) Cleanup() {
+	if s.session.ID != "" && !s.completed {
+		_ = queries.UpdateSessionStatus(s.db, s.session.ID, "abandoned")
+	}
+}
+
+// abandonAndGoHome marks the session abandoned and navigates home.
+// Recall card generation runs as fire-and-forget (saves to DB in background).
+func (s *SessionScreen) abandonAndGoHome() tea.Cmd {
+	if s.session.ID != "" {
+		_ = queries.UpdateSessionStatus(s.db, s.session.ID, "abandoned")
+	}
+	s.completed = true
+
+	navCmd := func() tea.Msg {
+		return NavigateMsg{Screen: "home"}
+	}
+
+	recallCmd := s.fireRecallGeneration()
+	if recallCmd != nil {
+		return tea.Batch(recallCmd, navCmd)
+	}
+	return navCmd
+}
+
+// completeSession marks the session completed, shows a summary, and generates recall cards.
+func (s *SessionScreen) completeSession() tea.Cmd {
+	if s.session.ID != "" {
+		_ = queries.UpdateSessionStatus(s.db, s.session.ID, "completed")
+	}
+	s.completed = true
+
+	checkpoints, _ := queries.GetCheckpointsForSession(s.db, s.session.ID)
+	var summary strings.Builder
+	summary.WriteString(fmt.Sprintf("Session complete — %d checkpoints, mastery: %d/5", len(checkpoints), s.progress.MasteryLevel))
+	if len(checkpoints) > 0 {
+		summary.WriteString("\n\nConcepts covered:")
+		for _, cp := range checkpoints {
+			summary.WriteString(fmt.Sprintf("\n  - %s", cp.Concept))
+		}
+	}
+	s.chatView.AddMessage("system", summary.String())
+
+	cmd := s.fireRecallGeneration()
+	if cmd != nil {
+		s.generatingCards = true
+		s.chatView.AddMessage("system", "Generating recall cards...")
+		return tea.Batch(cmd, s.spinner.Tick)
+	}
+
+	s.chatView.AddMessage("system", "Press enter or ctrl+h to return home.")
+	return nil
+}
+
+// fireRecallGeneration returns a tea.Cmd that generates recall cards from session checkpoints.
+func (s *SessionScreen) fireRecallGeneration() tea.Cmd {
+	if s.apiKey == "" || s.session.ID == "" {
+		return nil
+	}
+
+	checkpoints, _ := queries.GetCheckpointsForSession(s.db, s.session.ID)
+	if len(checkpoints) == 0 {
+		return nil
+	}
+
+	topicTitle := s.topic.Title
+	topicID := s.topicID
+	db := s.db
+	apiKey := s.apiKey
+
+	return func() tea.Msg {
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+
+		cards, err := ai.GenerateRecallCards(ctx, apiKey, topicTitle, checkpoints)
+		if err != nil {
+			return sessionEndMsg{err: err}
+		}
+
+		for _, card := range cards {
+			id := uuid.New().String()
+			_ = queries.InsertRecallCard(db, id, topicID, card.Question, card.Answer)
+		}
+
+		return sessionEndMsg{cardsGenerated: len(cards)}
+	}
 }
 
 // initSession loads topic data and creates a DB session.

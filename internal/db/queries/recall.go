@@ -71,6 +71,19 @@ func UpdateRecallCard(db *sql.DB, id string, nextReview time.Time, intervalDays,
 	return nil
 }
 
+// GetAllRecallCards returns all recall cards.
+func GetAllRecallCards(db *sql.DB) ([]models.RecallCard, error) {
+	rows, err := db.Query(
+		`SELECT id, topic_id, question, answer, next_review, interval_days, ease_factor, repetitions, created_at
+		 FROM recall_cards ORDER BY created_at`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query all cards: %w", err)
+	}
+	defer rows.Close()
+	return scanRecallCards(rows)
+}
+
 func scanRecallCards(rows *sql.Rows) ([]models.RecallCard, error) {
 	var cards []models.RecallCard
 	for rows.Next() {
