@@ -41,7 +41,7 @@ func seedTopic(t *testing.T, database *sql.DB) {
 func TestSessionScreen_StreamChunkAccumulation(t *testing.T) {
 	// Test that stream chunks accumulate correctly in the buffer.
 	// This does NOT process StreamDoneMsg (which needs a DB).
-	s := NewSessionScreen(nil, nil, "test-topic")
+	s := NewSessionScreen(nil, nil, "test-topic", "")
 	s.SetSize(80, 24)
 	s.chunkChan = make(chan tea.Msg, 64)
 	s.streaming = true
@@ -74,7 +74,7 @@ func TestSessionScreen_StreamDoneFlow(t *testing.T) {
 	database := setupTestDB(t)
 	seedTopic(t, database)
 
-	s := NewSessionScreen(database, nil, "test-topic")
+	s := NewSessionScreen(database, nil, "test-topic", "")
 	s.SetSize(80, 24)
 	s.chunkChan = make(chan tea.Msg, 64)
 	s.streaming = true
@@ -107,7 +107,7 @@ func TestSessionScreen_StreamDoneFlow(t *testing.T) {
 }
 
 func TestSessionScreen_StreamErrorFlow(t *testing.T) {
-	s := NewSessionScreen(nil, nil, "test-topic")
+	s := NewSessionScreen(nil, nil, "test-topic", "")
 	s.SetSize(80, 24)
 	s.chunkChan = make(chan tea.Msg, 64)
 	s.streaming = true
@@ -136,7 +136,7 @@ type testError struct{}
 func (e *testError) Error() string { return "test error" }
 
 func TestSessionScreen_ViewDuringStreaming_NoHang(t *testing.T) {
-	s := NewSessionScreen(nil, nil, "test-topic")
+	s := NewSessionScreen(nil, nil, "test-topic", "")
 	s.SetSize(80, 24)
 	s.chunkChan = make(chan tea.Msg, 64)
 	s.streaming = true
@@ -164,7 +164,7 @@ func TestSessionScreen_ViewDuringStreaming_NoHang(t *testing.T) {
 }
 
 func TestSessionScreen_ViewNoEscapeSequences(t *testing.T) {
-	s := NewSessionScreen(nil, nil, "test-topic")
+	s := NewSessionScreen(nil, nil, "test-topic", "")
 	s.SetSize(80, 24)
 
 	view := s.View()
@@ -182,7 +182,7 @@ func TestSessionScreen_ViewNoEscapeSequences(t *testing.T) {
 }
 
 func TestSessionScreen_RepeatedViewDoesNotDoubleRender(t *testing.T) {
-	s := NewSessionScreen(nil, nil, "test-topic")
+	s := NewSessionScreen(nil, nil, "test-topic", "")
 	s.SetSize(80, 24)
 	s.streaming = true
 	s.chunkChan = make(chan tea.Msg, 64)

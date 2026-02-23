@@ -25,6 +25,16 @@ archives:
       - goos: windows
         format: zip
 
+brews:
+  - repository:
+      owner: ameal-dev
+      name: homebrew-tap
+    homepage: https://github.com/ameal-dev/crates
+    description: Socratic coding tutor — the understanding layer for AI-assisted coding
+    license: MIT
+    install: |
+      bin.install "crates"
+
 checksum:
   name_template: checksums.txt
 

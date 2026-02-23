@@ -2,6 +2,7 @@ package tui
 
 import (
 	"database/sql"
+	"fmt"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -37,6 +38,7 @@ var screenNameMap = map[string]ScreenType{
 type App struct {
 	db            *sql.DB
 	aiClient      ai.Streamer
+	apiKey        string
 	currentScreen ScreenType
 	screenModels  map[ScreenType]screens.Screen
 	width, height int
@@ -44,10 +46,11 @@ type App struct {
 }
 
 // NewApp creates the root application model.
-func NewApp(db *sql.DB, aiClient ai.Streamer) App {
+func NewApp(db *sql.DB, aiClient ai.Streamer, apiKey string) App {
 	return App{
 		db:            db,
 		aiClient:      aiClient,
+		apiKey:        apiKey,
 		currentScreen: ScreenHome,
 		screenModels:  make(map[ScreenType]screens.Screen),
 	}
@@ -83,8 +86,15 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c":
+			if cleaner, ok := a.screenModels[a.currentScreen].(screens.Cleanable); ok {
+				cleaner.Cleanup()
+			}
 			return a, tea.Quit
 		case "ctrl+h":
+			// Let session screen handle its own cleanup flow
+			if a.currentScreen == ScreenSession {
+				break
+			}
 			if a.currentScreen != ScreenHome && a.currentScreen != ScreenOnboarding {
 				a.currentScreen = ScreenHome
 				if s, ok := a.screenModels[ScreenHome]; ok {
@@ -103,7 +113,7 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// If navigating to session with a topic, create a new session screen
 		if st == ScreenSession && msg.TopicID != "" {
-			sess := screens.NewSessionScreen(a.db, a.aiClient, msg.TopicID)
+			sess := screens.NewSessionScreen(a.db, a.aiClient, msg.TopicID, a.apiKey)
 			if msg.SessionID != "" {
 				sess.SetResumeSession(msg.SessionID)
 			}
@@ -131,9 +141,27 @@ func (a App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+const (
+	minWidth  = 60
+	minHeight = 15
+)
+
 func (a App) View() string {
 	if !a.ready {
 		return "Loading..."
+	}
+
+	if a.width < minWidth || a.height < minHeight {
+		msg := fmt.Sprintf(
+			"Terminal too small (%d×%d). Minimum: %d×%d.\n\nResize your terminal to continue.",
+			a.width, a.height, minWidth, minHeight,
+		)
+		style := lipgloss.NewStyle().
+			Width(a.width).
+			Height(a.height).
+			Align(lipgloss.Center, lipgloss.Center).
+			Foreground(lipgloss.Color("#e0af68"))
+		return style.Render(msg)
 	}
 
 	if screen, ok := a.screenModels[a.currentScreen]; ok {

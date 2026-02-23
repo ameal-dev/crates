@@ -14,17 +14,17 @@ import (
 	"github.com/ameal-dev/crates/internal/queue"
 )
 
-// Tokyo Night color palette (prefixed hm to avoid collisions with other screens)
+// Home screen aliases for shared palette
 var (
-	hmSurface   = lipgloss.Color("#1e2030")
-	hmAccent    = lipgloss.Color("#bb9af7")
-	hmPink      = lipgloss.Color("#f7768e")
-	hmOrange    = lipgloss.Color("#e0af68")
-	hmGreen     = lipgloss.Color("#9ece6a")
-	hmBlue      = lipgloss.Color("#7aa2f7")
-	hmMuted     = lipgloss.Color("#565f89")
-	hmFg        = lipgloss.Color("#c0caf5")
-	hmDimBorder = lipgloss.Color("#3b3d57")
+	hmSurface   = clrSurface
+	hmAccent    = clrAccent
+	hmPink      = clrPink
+	hmOrange    = clrOrange
+	hmGreen     = clrGreen
+	hmBlue      = clrBlue
+	hmMuted     = clrMuted
+	hmFg        = clrFg
+	hmDimBorder = clrDimBorder
 )
 
 // HomeScreen is the main dashboard shown on startup.
@@ -332,7 +332,7 @@ func statusPill(status string) string {
 	case "active":
 		return lipgloss.NewStyle().
 			Background(hmGreen).
-			Foreground(lipgloss.Color("#1a1b26")).
+			Foreground(clrDark).
 			Padding(0, 1).
 			Render("active")
 	case "completed":
@@ -344,7 +344,7 @@ func statusPill(status string) string {
 	default:
 		return lipgloss.NewStyle().
 			Background(hmPink).
-			Foreground(lipgloss.Color("#1a1b26")).
+			Foreground(clrDark).
 			Padding(0, 1).
 			Render("left")
 	}
@@ -355,19 +355,19 @@ func difficultyBadge(mastery int) string {
 	case mastery <= 1:
 		return lipgloss.NewStyle().
 			Background(hmGreen).
-			Foreground(lipgloss.Color("#1a1b26")).
+			Foreground(clrDark).
 			Padding(0, 1).
 			Render("beginner")
 	case mastery <= 3:
 		return lipgloss.NewStyle().
 			Background(hmOrange).
-			Foreground(lipgloss.Color("#1a1b26")).
+			Foreground(clrDark).
 			Padding(0, 1).
 			Render("intermediate")
 	default:
 		return lipgloss.NewStyle().
 			Background(hmPink).
-			Foreground(lipgloss.Color("#1a1b26")).
+			Foreground(clrDark).
 			Padding(0, 1).
 			Render("advanced")
 	}
