@@ -7,6 +7,59 @@ on:
     branches: [master]
 
 jobs:
+  lint-commits:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check branch name
+        run: |
+          BRANCH="${GITHUB_HEAD_REF}"
+          if [[ "$BRANCH" == "master" ]]; then
+            echo "Cannot PR from master to master"
+            exit 1
+          fi
+          if ! echo "$BRANCH" | grep -qE '^[a-z][a-z0-9-]{0,30}$'; then
+            echo "Branch name must be lowercase-hyphenated, 1-31 chars: got '$BRANCH'"
+            exit 1
+          fi
+
+      - name: Check commit messages
+        run: |
+          COMMITS=$(git log --format='%s' origin/master..HEAD)
+          FAILED=0
+          while IFS= read -r msg; do
+            [ -z "$msg" ] && continue
+            # must start lowercase
+            if [[ "$msg" =~ ^[A-Z] ]]; then
+              echo "FAIL (uppercase): $msg"
+              FAILED=1
+            fi
+            # no conventional commit prefixes
+            if [[ "$msg" =~ ^(feat|fix|chore|docs|style|refactor|test|ci|build)\: ]]; then
+              echo "FAIL (no prefixes): $msg"
+              FAILED=1
+            fi
+            # no co-author trailers in subject
+            if [[ "$msg" =~ Co-Authored-By ]]; then
+              echo "FAIL (no co-author): $msg"
+              FAILED=1
+            fi
+            # under 50 chars
+            if [ ${#msg} -gt 50 ]; then
+              echo "FAIL (over 50 chars): $msg"
+              FAILED=1
+            fi
+            # must start with a verb (common set)
+            if ! echo "$msg" | grep -qE '^(fix|add|remove|update|wire|rename|move|clean|refactor|drop|swap|bump|set|use|make|improve|handle|merge|revert|skip|stop|start|split|wrap|trim|sort|hide|show|load|init|seed|parse|strip|batch|cache|queue|build|run|test|log|pad|cap|gate) '; then
+              echo "WARN (should start with a verb): $msg"
+            fi
+          done <<< "$COMMITS"
+          exit $FAILED
+
   test:
     runs-on: ubuntu-latest
     steps:
