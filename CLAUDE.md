@@ -1,9 +1,27 @@
-# Kodsan — Socratic Coding Tutor + Understanding Layer
+# Crates — Socratic Coding Tutor + Understanding Layer
 
-Kodsan is the understanding layer that runs alongside AI-assisted coding. Claude Code writes
-the code; Kodsan ensures the developer understands it. These two tools are designed to be
-used together — Claude Code accelerates output, Kodsan ensures understanding accumulates
+Crates is the understanding layer that runs alongside AI-assisted coding. Claude Code writes
+the code; Crates ensures the developer understands it. These two tools are designed to be
+used together — Claude Code accelerates output, Crates ensures understanding accumulates
 alongside that output rather than being replaced by it.
+
+## Git Conventions
+
+### Branches
+
+- Lowercase, hyphens only, 1-3 words: `fix-spinner`, `recall-cards`, `session-end`
+- No prefixes (`feature/`, `fix/`, `bugfix/`)
+- No ticket numbers
+- All work happens on feature branches — never commit directly to master
+
+### Commits
+
+- Lowercase imperative phrase, no period: `fix spinner during fallback`
+- Start with a verb: `fix`, `add`, `remove`, `update`, `wire`, `rename`, `move`, `clean`
+- Under 50 chars
+- No conventional commit prefixes (`feat:`, `fix:`, `chore:`)
+- No co-author trailers
+- Multi-line body allowed for complex changes, but the first line stands alone
 
 ## Tech Stack
 
@@ -13,11 +31,13 @@ alongside that output rather than being replaced by it.
 - **Database:** SQLite via `modernc.org/sqlite` (pure Go, no CGO)
 - **Migrations:** goose/v3 with embedded SQL files
 - **Testing:** `go test -race`
+- **CI:** GitHub Actions (test on push/PR, goreleaser on tags)
+- **Release:** goreleaser v2, cross-compile for macOS/Linux/Windows
 
 ## Project Structure
 
 ```
-cmd/kodsan/main.go        → Entry point: open DB, migrate, seed, start TUI
+cmd/crates/main.go        → Entry point: open DB, migrate, seed, start TUI
 internal/
   db/
     db.go                 → Open(), RunMigrations() — WAL, FK, busy_timeout
@@ -40,7 +60,7 @@ internal/
   confidence/
     model.go              → EffectiveMastery, UpdateAfterExposure/Session/Recall, ApplyTimeDecay
   mcp/
-    server.go             → MCP server: kodsan_get_user_context + kodsan_record_exposure
+    server.go             → MCP server: crates_get_user_context + crates_record_exposure
     handlers.go           → Tool handler implementations
   queue/
     builder.go            → BuildDailyQueue() — priority scoring, max 3 lessons/day
@@ -69,13 +89,13 @@ migrations/
 ## Commands
 
 ```bash
-make build      # go build -o bin/kodsan ./cmd/kodsan
-make run        # go run ./cmd/kodsan
+make build      # go build -o bin/crates ./cmd/crates
+make run        # go run ./cmd/crates
 make test       # go test ./...
 make test-race  # go test -race ./...
 make lint       # golangci-lint run
-make clean      # rm -rf bin/
-make mcp        # go run ./cmd/kodsan --mcp  (start MCP server mode)
+make clean      # rm -rf bin/ dist/
+make mcp        # go run ./cmd/crates --mcp  (start MCP server mode)
 ```
 
 ---
@@ -113,6 +133,8 @@ make mcp        # go run ./cmd/kodsan --mcp  (start MCP server mode)
   with meaningful logic, not just referenced
 - **NEVER** queue more than 5 concept matches per diff — filter by confidence and pick
   the most significant to avoid noise overwhelming the lesson queue
+- **NEVER** commit directly to master — always use a feature branch + PR
+- **NEVER** add co-author trailers or AI attribution to commits
 
 ---
 
@@ -255,20 +277,20 @@ Examples:
 
 ## MCP Server
 
-`internal/mcp/server.go` exposes Kodsan's knowledge graph to Claude Code. This is the
-integration point that makes Kodsan and Claude Code aware of each other.
+`internal/mcp/server.go` exposes Crates' knowledge graph to Claude Code. This is the
+integration point that makes Crates and Claude Code aware of each other.
 
 ### Transport
 
-Standard MCP stdio transport. Start with: `kodsan --mcp`
+Standard MCP stdio transport. Start with: `crates --mcp`
 
 Claude Code MCP config entry:
 
 ```json
 {
   "mcpServers": {
-    "kodsan": {
-      "command": "/usr/local/bin/kodsan",
+    "crates": {
+      "command": "/usr/local/bin/crates",
       "args": ["--mcp"]
     }
   }
@@ -279,7 +301,7 @@ Claude Code MCP config entry:
 
 Keep the MCP surface area minimal. Complexity here breaks the 2-second response budget.
 
-**`kodsan_get_user_context`**
+**`crates_get_user_context`**
 
 - Input: none
 - Output: `{weak_topics: TopicSummary[], mastery_summary: string}`
@@ -287,7 +309,7 @@ Keep the MCP surface area minimal. Complexity here breaks the 2-second response 
 - Used by Claude Code in its system prompt to calibrate generation style and comments
 - Called at the start of a Claude Code session, not on every generation
 
-**`kodsan_record_exposure`**
+**`crates_record_exposure`**
 
 - Input: `{diff: string, commit_sha: string, source: "AUTHORED" | "AI_ACCEPTED"}`
 - Output: `{concepts_detected: string[], lessons_queued: int}`
@@ -301,11 +323,11 @@ Keep the MCP surface area minimal. Complexity here breaks the 2-second response 
 - The SQLite connection is shared with the main TUI process via WAL mode —
   this is safe with `busy_timeout=5000` already configured
 - Never start the TUI and MCP server simultaneously in the same process —
-  they are separate run modes (`kodsan` vs `kodsan --mcp`)
+  they are separate run modes (`crates` vs `crates --mcp`)
 
 ### What Claude Code Does With Context
 
-When `kodsan_get_user_context` returns weak topics, Claude Code's system prompt gains:
+When `crates_get_user_context` returns weak topics, Claude Code's system prompt gains:
 
 ```
 User has weak understanding of: react/hooks/useeffect (effective mastery: 0.8),
@@ -421,9 +443,9 @@ case NavigateMsg:
 - **Concept exposure** — An instance of a topic appearing in code, regardless of whether
   it was understood
 - **AI_ACCEPTED** — A concept encountered in Claude Code output that was accepted without
-  a Kodsan session confirming understanding. Treated as weaker signal than SESSION
+  a Crates session confirming understanding. Treated as weaker signal than SESSION
 - **AUTHORED** — A concept the user wrote themselves, without AI generation
-- **SESSION** — A concept confirmed through a Kodsan Socratic session with checkpoint
+- **SESSION** — A concept confirmed through a Crates Socratic session with checkpoint
 - **Lesson queue** — The prioritized list of concepts due for a Socratic session,
   derived from code exposures filtered through the mastery confidence model
 
@@ -435,7 +457,7 @@ case NavigateMsg:
 DB layer, curriculum, AI client, Socratic engine, TUI screens, checkpoint processing,
 recall card generation, SM-2, spaced repetition screen, schema extension
 (`003_exposures_and_queue.sql`), concept extractor (hybrid regex + Claude classification),
-MCP server (`kodsan --mcp`), mastery confidence model, lesson queue + home screen integration.
+MCP server (`crates --mcp`), mastery confidence model, lesson queue + home screen integration.
 
 ---
 
